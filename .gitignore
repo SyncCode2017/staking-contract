@@ -6,6 +6,8 @@ coverage.json
 typechain
 typechain-types
 gas-report.txt
+.solcx-lock-0.8.16
+
 #Hardhat files
 cache
 artifacts

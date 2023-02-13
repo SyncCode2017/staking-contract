@@ -8,3 +8,7 @@ staking reward rate.
 All these parameters can only be changed by the manager role at any time.
 
 The contract is also pausable. Only the pauser role can pause the contract.
+
+## Mythril Security Tool Report
+
+![alt text](mythril-report.png)
