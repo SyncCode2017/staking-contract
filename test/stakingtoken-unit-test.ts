@@ -38,7 +38,6 @@ describe("Stake Manager Unit Tests", function () {
         alice: TestAccount,
         bob: TestAccount,
         accounts: SignerWithAddress[],
-        staker: TestAccount,
         stakers: TestAccount[],
         stakeAmounts: BigNumber[],
         stakingToken: StakingTokenType,
@@ -50,7 +49,6 @@ describe("Stake Manager Unit Tests", function () {
     beforeEach("Set up accounts and contract", async () => {
         ({ deployer, alice, bob, stakingToken, mockToken }  = await setup())
         accounts = await ethers.getSigners()
-        const chainId: number = network.config.chainId!
         stakers = [deployer, alice, bob]
         fundsToContract = ONE.mul(10**6)
         stakeAmounts = [ONE.mul(100), ONE.mul(100), ONE.mul(100)]
@@ -147,6 +145,23 @@ describe("Stake Manager Unit Tests", function () {
 
             for (let i=0; i<stakers.length; i++) {
                 await expect(stakers[i].stakingToken.unStake(stakeAmounts[i])).to.be.revertedWith("Pausable: paused") 
+            }
+        })
+        it("does not allow unstaking when minimum staking period has not passed", async () => {
+            for (let i=0; i<stakers.length; i++) {
+                const initialBal = Number(await mockToken.balanceOf(stakers[i].address))
+                const trx: ContractTransaction = await stakers[i].mockToken.approve(stakingToken.address, stakeAmounts[i])
+                await trx.wait()
+                const trx1: ContractTransaction = await stakers[i].stakingToken.stake(stakeAmounts[i])
+                await trx1.wait()
+                const finalBal = Number(await mockToken.balanceOf(stakers[i].address))
+                assert.equal((initialBal - finalBal), Number(stakeAmounts[i]))
+            }
+            // after less than one month of staking
+            await moveTime(1000)
+
+            for (let i=0; i<stakers.length; i++) {
+                await expect(stakers[i].stakingToken.unStake(stakeAmounts[i])).to.be.revertedWith("StakingToken__MinimumStakingPeriodHasNotPassed") 
             }
         })
         it("rejects if the caller does not have staked token", async () => {
@@ -268,6 +283,14 @@ describe("Stake Manager Unit Tests", function () {
             assert.equal(newRewardsRate, newRate)
 
         })
+        it("blocks other users from setting new staking reward rate", async () => {
+            const rewardsRate = Number(await stakingToken.returnOnStakingX1m())
+            assert.equal(rewardsRate, rateX1m)
+            // after one year
+            await moveTime(31536000)
+            const newRewardsRate = 2 * (10**6)
+            await expect(alice.stakingToken.setRewardsRateX1m(newRewardsRate)).to.be.reverted
+        })
         it("updates accumulatedRewardAmount correctly when returnOnStakingX1m is changed", async () => {
             for (let i=0; i<stakers.length; i++) {
                 const initialBal = Number(await mockToken.balanceOf(stakers[i].address))
@@ -294,6 +317,20 @@ describe("Stake Manager Unit Tests", function () {
                 const accumulatedRewardEth = Math.floor(Number(ethers.utils.formatEther(accumulatedRewardWei)))
                 assert.equal(Number(ethers.utils.formatEther(stakeAmounts[i].toString())) * 3, accumulatedRewardEth)
             }
+        })
+        it("only pauser role can pause the contract", async () => {
+            // after one year
+            await moveTime(31536000)
+            await expect(alice.stakingToken.pause()).to.be.reverted
+        })
+        it("only pauser role can unpause the contract", async () => {
+            await moveTime(1000)
+            const trx: ContractTransaction = await deployer.stakingToken.pause()
+            await trx.wait()
+            await expect(bob.stakingToken.claimReward()).to.be.revertedWith("Pausable: paused")
+            // after one year
+            await moveTime(31536000)
+            await expect(alice.stakingToken.pause()).to.be.reverted
         })
     })
 })
